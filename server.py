@@ -78,9 +78,10 @@ def frame(sid, data):
             pred = non_max_suppression(pred, conf_thres, iou_thres)
         
         # Process predictions
+        fire_detected = False
+        annotator = Annotator(img.copy(), line_width=2)
+        
         for i, det in enumerate(pred):
-            annotator = Annotator(img.copy(), line_width=2)
-            
             if len(det):
                 # Rescale boxes from img_size to img size
                 det[:, :4] = scale_boxes(img_tensor.shape[2:], det[:, :4], img.shape).round()
@@ -90,26 +91,32 @@ def frame(sid, data):
                     c = int(cls)
                     label = f'{names[c]} {conf:.2f}'
                     annotator.box_label(xyxy, label, color=colors(c, True))
+                    
+                    # Check if fire is detected
+                    if names[c].lower() in ['fire', 'smoke']:
+                        fire_detected = True
                 
                 # Log detections
                 for c in det[:, -1].unique():
                     n = (det[:, -1] == c).sum()
                     print(f"Detected {n} {names[int(c)]}")
-            
-            # Get annotated image
-            result_img = annotator.result()
+        
+        # Get annotated image
+        result_img = annotator.result()
         
         # Convert back to base64 to send to client
         _, buffer = cv2.imencode('.jpg', result_img)
         result_encoded = base64.b64encode(buffer).decode('utf-8')
         result_data = f'data:image/jpeg;base64,{result_encoded}'
         
-        # Emit the processed frame back to the client
-        sio.emit('processed_frame', result_data, room=sid)
+        # Emit the processed frame and fire detection status back to the client
+        sio.emit('processed_frame', {
+            'image': result_data,
+            'fire_detected': fire_detected
+        }, room=sid)
         
     except Exception as e:
         print(f"Error processing frame: {e}")
-
 if __name__ == '__main__':
     # Start the server
     port = 5001
